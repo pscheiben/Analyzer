@@ -50,8 +50,3 @@ class CSVAnalyzerApp: # Define a new class named CSVAnalyzerApp
             return column   # Return the column name
         messagebox.showerror("Invalid Column", "Column not found in CSV") # Show an error message box
         return None
-
-if __name__ == "__main__": # If the script is being run as the main program 
-    root = tk.Tk() # Create a new Tkinter root window
-    app = CSVAnalyzerApp(root) # Create a new instance of the CSVAnalyzerApp class
-    root.mainloop() # Start the Tkinter main event loop
