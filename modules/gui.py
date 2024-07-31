@@ -3,7 +3,6 @@ from tkinter import filedialog, messagebox  # Import the filedialog and messageb
 from modules.file_operations import read_csv, save_plot # Import the read_csv and save_plot functions from the modules.file_operations module
 from modules.analysis import create_histogram, calculate_fft, calculate_power_spectrum, calculate_psd # Import the create_histogram, calculate_fft, calculate_power_spectrum, and calculate_psd functions from the modules.analysis module
 from modules.visualization import plot_histogram, plot_fft, plot_power_spectrum, plot_psd # Import the plot_histogram, plot_fft, plot_power_spectrum, and plot_psd functions from the modules.visualization module
-from modules.comparison import add_data, subtract_data  # Import the add_data and subtract_data functions from the modules.comparison module
 
 class CSVAnalyzerApp: # Define a new class named CSVAnalyzerApp
     def __init__(self, root): # Define the __init__ method with the self and root parameters
@@ -38,10 +37,6 @@ class CSVAnalyzerApp: # Define a new class named CSVAnalyzerApp
             fig = plot_histogram(hist) # Plot the histogram using the plot_histogram function
             save_plot(fig, "histogram.png") # Save the histogram plot as "histogram.png"
             messagebox.showinfo("Analysis Complete", "Histogram saved as histogram.png") # Show an info message box
-
-    def compare(self): # Define the compare method with the self parameter
-        # Implement similar to load_csv and analyze     
-        pass # Placeholder for implementation
 
     def ask_column(self): # Define the ask_column method with the self parameter
         # Simple prompt to ask for column name
