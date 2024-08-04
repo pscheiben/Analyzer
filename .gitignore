@@ -6,5 +6,6 @@ modules/__pycache__/file_operations.cpython-311.pyc
 modules/__pycache__/comparison.cpython-311.pyc
 modules/__pycache__/analysis.cpython-311.pyc
 modules/__pycache__/__init__.cpython-312.pyc
-data/test2.csv
-data/test3.csv
+data/2.csv
+data/3.csv
+/*.png
