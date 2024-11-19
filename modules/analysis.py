@@ -56,3 +56,12 @@ def calculate_power_spectrum(data, column):
 def calculate_psd(data, column):
     freq, ps = calculate_power_spectrum(data, column)
     return freq, ps / len(freq)
+
+def show_S(data, column):
+    return None
+
+def time_domain_gating(data, column):
+    return None
+
+def frequency_domain_back(data, column):
+    return None
