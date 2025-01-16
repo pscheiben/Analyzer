@@ -1,7 +1,7 @@
 import tkinter as tk    # Import the tkinter module as tk
 import pandas as pd     # Import the pandas module as pd
 from tkinter import filedialog, messagebox  # Import the filedialog and messagebox modules from tkinter
-from modules.analysis import create_histogram, calculate_fft, calculate_power_spectrum, calculate_psd # Import the create_histogram, calculate_fft, calculate_power_spectrum, and calculate_psd functions from the modules.analysis module
+from modules.analysis import create_histogram, calculate_fft, calculate_pds # Import the create_histogram, calculate_fft, calculate_power_spectrum, and calculate_psd functions from the modules.analysis module
 from modules.column_selector import SelectColumnsWindow
 
 NUM_SAMPLES = 524288
@@ -41,6 +41,12 @@ class AnalyzerApp:
             width=button_width, height=button_height
         )
         self.fft_button.grid(row=3, column=0, padx=padyvalue, pady=padxvalue)
+
+        self.pds_button = tk.Button(
+            self.root, text="Power Density", command=self.pds, state="disabled",
+            width=button_width, height=button_height
+        )
+        self.pds_button.grid(row=4, column=0, padx=padyvalue, pady=padxvalue)
 
         self.s_button = tk.Button(
             self.root, text="S-Parameters", command=self.S_param, state="disabled",
@@ -88,6 +94,7 @@ class AnalyzerApp:
         if self.selected_columns:
             self.histogram_button.config(state="normal")  # Enable "Histogram" button
             self.fft_button.config(state="normal")  # Enable "FFT Spectrum" button
+            self.pds_button.config(state="normal")  # Enable "Power Density" button
 
     def save_plot(self, fig, filename):
         fig.savefig(filename)
@@ -118,6 +125,19 @@ class AnalyzerApp:
         for column in self.selected_columns:
             fft_plot = calculate_fft(self.data, column)
             self.save_plot(fft_plot, f"{column}_fft.png")
+
+    def pds(self):
+        if not hasattr(self, 'data'):
+            messagebox.showerror("No Data", "No CSV file loaded")
+            return
+
+        if not self.selected_columns:
+            messagebox.showerror("No Columns", "No columns selected for analysis")
+            return
+
+        for column in self.selected_columns:
+            pds_plot = calculate_pds(self.data, column)
+            self.save_plot(pds_plot, f"{column}_pds.png")
 
     def S_param(self):
         if not hasattr(self, 'data'):
