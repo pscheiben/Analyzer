@@ -10,6 +10,7 @@ class Trace:
         self.is_db = is_db 
         self.visible = True
         self.is_active = False
+        self.color = None  # <--- New attribute to store the static color
 
     @classmethod
     def from_time_domain(cls, name, time_data, volt_data, remove_dc=False):
