@@ -1,177 +1,185 @@
-import tkinter as tk    # Import the tkinter module as tk
-import pandas as pd     # Import the pandas module as pd
-from tkinter import filedialog, messagebox  # Import the filedialog and messagebox modules from tkinter
-from modules.analysis import create_histogram, calculate_fft, calculate_pds # Import the create_histogram, calculate_fft, calculate_power_spectrum, and calculate_psd functions from the modules.analysis module
-from modules.column_selector import SelectColumnsWindow
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import pandas as pd
+import os
 
-NUM_SAMPLES = 524288
-SAMPLE_FREQ = 250000
+# Matplotlib
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+# Custom Modules
+import analysis
+import config
+import loader_gui
+import trace_model 
 
 class AnalyzerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Analyzer")
-        self.create_widgets()
-        self.selected_columns = []
+        self.root.title("PicoScope Analyzer & Comparator")
+        
+        # Store a LIST of traces
+        self.traces = [] 
+        
+        self.setup_layout()
+        
+    def setup_layout(self):
+        # --- LEFT PANEL ---
+        control_frame = ttk.Frame(self.root, padding=10)
+        control_frame.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # Load / Clear
+        self.btn_load = ttk.Button(control_frame, text="Add Trace (CSV)", command=self.load_csv)
+        self.btn_load.pack(pady=5, fill=tk.X)
+        
+        self.btn_clear = ttk.Button(control_frame, text="Clear All", command=self.clear_all)
+        self.btn_clear.pack(pady=5, fill=tk.X)
 
-    def create_widgets(self):
-        button_width = 14  # Width in text units
-        button_height = 2  # Height in text units
-        padxvalue = 5
-        padyvalue = 5
-        self.load_button = tk.Button(
-            self.root, text="Load Data", command=self.load_csv, width=button_width, height=button_height
+        # DC Offset Checkbox
+        self.remove_dc_var = tk.BooleanVar(value=True)
+        self.chk_dc = ttk.Checkbutton(control_frame, text="Remove DC (Time Dom.)", 
+                                      variable=self.remove_dc_var, command=self.refresh_plot_event)
+        self.chk_dc.pack(pady=10, anchor="w")
+        
+        # --- RESTORED: Peak Slider ---
+        ttk.Label(control_frame, text="Max Peaks to Label:").pack(pady=(15, 0))
+        self.peak_slider = tk.Scale(
+            control_frame, from_=0, to=10, orient=tk.HORIZONTAL, 
+            command=self.on_slider_change
         )
-        self.load_button.grid(row=0, column=0, padx=padyvalue, pady=padxvalue)
-
-        self.select_column_button = tk.Button(
-            self.root, text="Select Columns", command=self.select_column, state="disabled",
-            width=button_width, height=button_height
-        )
-        self.select_column_button.grid(row=1, column=0, padx=padyvalue, pady=padxvalue)
-
-        self.histogram_button = tk.Button(
-            self.root, text="Histogram", command=self.histogram, state="disabled",
-            width=button_width, height=button_height
-        )
-        self.histogram_button.grid(row=2, column=0, padx=padyvalue, pady=padxvalue)
-
-        self.fft_button = tk.Button(
-            self.root, text="FFT Spectrum", command=self.fft, state="disabled",
-            width=button_width, height=button_height
-        )
-        self.fft_button.grid(row=3, column=0, padx=padyvalue, pady=padxvalue)
-
-        self.pds_button = tk.Button(
-            self.root, text="Power Density", command=self.pds, state="disabled",
-            width=button_width, height=button_height
-        )
-        self.pds_button.grid(row=4, column=0, padx=padyvalue, pady=padxvalue)
-
-        self.s_button = tk.Button(
-            self.root, text="S-Parameters", command=self.S_param, state="disabled",
-            width=button_width, height=button_height
-        )
-        self.s_button.grid(row=1, column=1, padx=padyvalue, pady=padxvalue)
-
-        self.Time_Domain_button = tk.Button(
-            self.root, text="Time Domain", command=self.time_domain, state="disabled",
-            width=button_width, height=button_height
-        )
-        self.Time_Domain_button.grid(row=2, column=1, padx=padyvalue, pady=padxvalue)
-
-        self.Frequency_Domain_button = tk.Button(
-            self.root, text="Frequency Domain", command=self.frequency_domain, state="disabled",
-            width=button_width, height=button_height
-        )
-
-        self.Frequency_Domain_button.grid(row=3, column=1, padx=padyvalue, pady=padxvalue)
-
-        self.exit_button = tk.Button(
-            self.root, text="Exit", command=self.root.quit, width=button_width, height=button_height
-        )
-        self.exit_button.grid(row=4, column=4, padx=padyvalue, pady=padxvalue)
+        self.peak_slider.set(5)
+        self.peak_slider.pack(pady=5, fill=tk.X)
+        # -----------------------------
+        
+        # --- RIGHT PANEL (Plot) ---
+        plot_frame = ttk.Frame(self.root)
+        plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        self.fig = Figure(figsize=(8, 6), dpi=100)
+        self.ax = self.fig.add_subplot(111)
+        self.ax.grid(True)
+        
+        self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
+        self.canvas.draw()
+        
+        toolbar = NavigationToolbar2Tk(self.canvas, plot_frame)
+        toolbar.update()
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     def load_csv(self):
-        self.file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
-        if self.file_path:
-            self.data = pd.read_csv(self.file_path, nrows=NUM_SAMPLES)
-            print(f"Loaded file: {self.file_path}, with first {NUM_SAMPLES} rows")
-            self.select_column_button.config(state="normal")  # Enable "Select Columns" button
-
-    def select_column(self):
-        if self.data is None or not hasattr(self.data, 'columns'):
-            messagebox.showerror("No Data", "No CSV file loaded")
+        file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+        if not file_path:
             return
+            
+        try:
+            # 1. Preview Headers
+            df_preview = pd.read_csv(file_path, nrows=5)
+            columns = list(df_preview.columns)
+            filename = os.path.basename(file_path)
+            
+            # 2. Open Mapper Dialog
+            dialog = loader_gui.ColumnMapperDialog(self.root, columns, filename)
+            self.root.wait_window(dialog)
+            
+            if not dialog.result: return
+                
+            # 3. Load Data
+            map_data = dialog.result
+            full_df = pd.read_csv(file_path, nrows=config.NUM_SAMPLES)
+            
+            # 4. Create Trace
+            if map_data['domain'] == "time":
+                new_trace = trace_model.Trace.from_time_domain(
+                    name=filename,
+                    time_data=full_df[map_data['x_col']].values,
+                    volt_data=full_df[map_data['y_col']].values,
+                    sample_rate=config.SAMPLE_FREQ,
+                    remove_dc=self.remove_dc_var.get()
+                )
+            else:
+                new_trace = trace_model.Trace.from_freq_domain(
+                    name=filename,
+                    freq_data=full_df[map_data['x_col']].values,
+                    mag_data=full_df[map_data['y_col']].values
+                )
+            
+            self.traces.append(new_trace)
+            self.refresh_plot()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load: {e}")
+            print(e)
 
-        columns = list(self.data.columns)
-        selector = SelectColumnsWindow(self.root, columns)
-        self.root.wait_window(selector)
+    def clear_all(self):
+        self.traces = []
+        self.refresh_plot()
 
-        self.selected_columns = selector.selected_columns
-        print("Selected columns:", self.selected_columns)
-
-        if self.selected_columns:
-            self.histogram_button.config(state="normal")  # Enable "Histogram" button
-            self.fft_button.config(state="normal")  # Enable "FFT Spectrum" button
-            self.pds_button.config(state="normal")  # Enable "Power Density" button
-
-    def save_plot(self, fig, filename):
-        fig.savefig(filename)
-        print("Plot Saved", f"Plot saved to {filename}")
-
-    def histogram(self):
-        if not hasattr(self, 'data'):
-            messagebox.showerror("No Data", "No CSV file loaded")
-            return
-
-        if not self.selected_columns:
-            messagebox.showerror("No Columns", "No columns selected for analysis")
-            return
-
-        for column in self.selected_columns:
-            hist = create_histogram(self.data, column)
-            self.save_plot(hist, f"{column}_histogram.png")
-
-    def fft(self):
-        if not hasattr(self, 'data'):
-            messagebox.showerror("No Data", "No CSV file loaded")
-            return
-
-        if not self.selected_columns:
-            messagebox.showerror("No Columns", "No columns selected for analysis")
-            return
-
-        for column in self.selected_columns:
-            fft_plot = calculate_fft(self.data, column)
-            self.save_plot(fft_plot, f"{column}_fft.png")
-
-    def pds(self):
-        if not hasattr(self, 'data'):
-            messagebox.showerror("No Data", "No CSV file loaded")
-            return
-
-        if not self.selected_columns:
-            messagebox.showerror("No Columns", "No columns selected for analysis")
-            return
-
-        for column in self.selected_columns:
-            pds_plot = calculate_pds(self.data, column)
-            self.save_plot(pds_plot, f"{column}_pds.png")
-
-    def S_param(self):
-        if not hasattr(self, 'data'):
-            messagebox.showerror("No Data", "No CSV file loaded")
-            return
-
-        if not self.selected_columns:
-            messagebox.showerror("No Columns", "No columns selected for analysis")
-            return
-
-        for column in self.selected_columns:
-            show_S(self.data, column)
-
-    def time_domain(self):
-        if not hasattr(self, 'data'):
-            messagebox.showerror("No Data", "No CSV file loaded")
-            return
-
-        if not self.selected_columns:
-            messagebox.showerror("No Columns", "No columns selected for analysis")
-            return
-
-        for column in self.selected_columns:
-            time_domain_gating(self.data, column)
-
-    def frequency_domain(self):
-        if not hasattr(self, 'data'):
-            messagebox.showerror("No Data", "No CSV file loaded")
-            return
-
-        if not self.selected_columns:
-            messagebox.showerror("No Columns", "No columns selected for analysis")
-            return
-
-        for column in self.selected_columns:
-            frequency_domain_back(self.data, column)        
+    def on_slider_change(self, val):
+        self.refresh_plot()
         
+    def refresh_plot_event(self):
+        # Wrapper for checkbox command (doesn't pass arguments)
+        self.refresh_plot()
+
+    def refresh_plot(self):
+        # 1. Save Zoom View
+        current_xlim = self.ax.get_xlim()
+        current_ylim = self.ax.get_ylim()
+        is_zoomed = not (current_xlim == (0.0, 1.0))
+        
+        self.ax.clear()
+        
+        # Get Slider Value
+        n_peaks = int(self.peak_slider.get())
+        search_range = current_xlim if is_zoomed else None
+        
+        # 2. Plot EVERY trace
+        for trace in self.traces:
+            # Plot and capture the 'line' object to know what color was assigned
+            line, = self.ax.plot(trace.freqs, trace.mags, label=trace.name, linewidth=0.8, alpha=0.8)
+            trace_color = line.get_color() # Get color (e.g., 'blue', 'orange')
+            
+            # --- RESTORED: Peak Finding ---
+            if n_peaks > 0:
+                top_peaks = analysis.get_top_peaks(
+                    trace.freqs, 
+                    trace.mags, 
+                    top_n=n_peaks, 
+                    min_dist_hz=500, 
+                    freq_range=search_range
+                )
+                
+                # Draw labels in the SAME color as the trace
+                for freq, mag in top_peaks:
+                    self.ax.plot(freq, mag, "x", color=trace_color)
+                    self.ax.annotate(
+                        f"{freq/1000:.1f}k", 
+                        xy=(freq, mag), 
+                        xytext=(0, 10), 
+                        textcoords="offset points", 
+                        ha='center', 
+                        color=trace_color, # Match trace color
+                        fontsize=8,
+                        rotation=90,
+                        fontweight='bold'
+                    )
+            # -----------------------------
+
+        # 3. Formatting
+        self.ax.set_title("Spectrum Comparison")
+        self.ax.set_xlabel("Frequency (Hz)")
+        self.ax.set_ylabel("Magnitude")
+        self.ax.grid(True, alpha=0.3)
+        
+        if self.traces:
+            self.ax.legend()
+            
+        # 4. Restore Zoom
+        if is_zoomed:
+            self.ax.set_xlim(current_xlim)
+            self.ax.set_ylim(current_ylim)
+        else:
+            self.ax.relim()
+            self.ax.autoscale_view()
+            
+        self.canvas.draw()
