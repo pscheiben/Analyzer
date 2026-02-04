@@ -36,6 +36,13 @@ def get_fft_data(data_array, sample_rate, remove_dc=False, to_db=True):
     
     return freq_axis, magnitude
 
+def get_noise_floor(magnitude_data):
+    """
+    Returns the approximate noise floor using the median.
+    """
+    # We use median because it ignores the high peaks (signals)
+    return np.median(magnitude_data)
+
 def get_top_peaks(freqs, magnitude, top_n=5, min_dist_hz=500, freq_range=None):
     """
     Finds peaks, optionally restricted to a specific frequency range.
