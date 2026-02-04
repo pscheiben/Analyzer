@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 # Matplotlib
-import matplotlib.pyplot as plt  # <--- FIXED: Added this import
+import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
@@ -17,7 +17,7 @@ import trace_model
 class AnalyzerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("PicoScope Analyzer & Comparator")
+        self.root.title("Peter's Analyzer & Comparator")
         self.traces = [] 
         self.setup_layout()
         
@@ -99,7 +99,6 @@ class AnalyzerApp:
             channel_name = map_data['y_col']
             trace_name = f"{filename}_{channel_name}"
             
-            # Uniqueness check
             existing_names = [t.name for t in self.traces]
             if trace_name in existing_names:
                 count = 1
@@ -113,7 +112,8 @@ class AnalyzerApp:
                     name=trace_name,
                     time_data=full_df[map_data['x_col']].values,
                     volt_data=full_df[map_data['y_col']].values,
-                    remove_dc=self.remove_dc_var.get()
+                    remove_dc=self.remove_dc_var.get(),
+                    manual_sample_rate=map_data['sample_rate']
                 )
             else:
                 new_trace = trace_model.Trace.from_freq_domain(
@@ -149,9 +149,12 @@ class AnalyzerApp:
     def refresh_plot_event(self):
         self.refresh_plot()
 
+    # --- NOW INDENTED CORRECTLY INSIDE THE CLASS ---
     def refresh_plot(self):
         current_xlim = self.ax.get_xlim()
         current_ylim = self.ax.get_ylim()
+        
+        # Check if zoomed (standard matplotlib default is 0,1)
         is_zoomed = (current_xlim != (0.0, 1.0)) and (current_xlim[1] > 1.0)
         
         self.ax.clear()
@@ -159,6 +162,7 @@ class AnalyzerApp:
         search_range = current_xlim if is_zoomed else None
         global_max_freq = 0
         has_active = any(t.is_active for t in self.traces)
+        active_trace = next((t for t in self.traces if t.is_active), None)
         
         for trace in self.traces:
             if not trace.visible or len(trace.freqs) == 0:
@@ -167,16 +171,12 @@ class AnalyzerApp:
             if trace.freqs[-1] > global_max_freq:
                 global_max_freq = trace.freqs[-1]
             
-            # --- FIXED: Robust Color Assignment ---
             if trace.color is None:
                 try:
-                    # Try modern internal API
                     trace.color = next(self.ax._get_lines.prop_cycler)['color']
                 except (AttributeError, StopIteration):
-                    # Fallback to stable rcParams
                     cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
                     trace.color = cycle[len(self.traces) % len(cycle)]
-            # ---------------------------------------
 
             lw = 2.5 if trace.is_active else 1.0
             alpha = 1.0 if (trace.is_active or not has_active) else 0.4
@@ -200,15 +200,15 @@ class AnalyzerApp:
                 for freq, mag in top_peaks:
                     self.ax.plot(freq, mag, "x", color=trace.color, zorder=6)
                     self.ax.annotate(
-                        f"{freq/1000:.1f}k", xy=(freq, mag), 
+                        f"{freq/1000:.1f}k\n({mag:.1f}dB)", xy=(freq, mag), 
                         xytext=(0, 10), textcoords="offset points", 
                         ha='center', color=trace.color, 
-                        fontsize=8, rotation=90, fontweight='bold', zorder=7
+                        fontsize=8, rotation=0, fontweight='bold', zorder=7
                     )
 
         self.ax.set_title("Spectrum Comparison")
         self.ax.set_xlabel("Frequency (Hz)")
-        self.ax.set_ylabel("Magnitude")
+        self.ax.set_ylabel("Magnitude (dB, normalized)")
         self.ax.grid(True, alpha=0.3)
         
         if any(t.visible for t in self.traces):
@@ -217,18 +217,19 @@ class AnalyzerApp:
                 legline.set_picker(True)
                 legline.set_pickradius(10)
             
-        active_trace = next((t for t in self.traces if t.is_active), None)
-
         if is_zoomed:
             self.ax.set_xlim(current_xlim)
             self.ax.set_ylim(current_ylim)
         elif active_trace:
             self.ax.set_xlim(left=0, right=max(active_trace.freqs))
-            self.ax.set_ylim(bottom=0, top=max(active_trace.mags) * 1.1)
+            self.ax.set_ylim(bottom=-100, top=5) 
         else:
             self.ax.relim()
             self.ax.autoscale_view(scalex=False, scaley=True)
             if global_max_freq > 0:
                 self.ax.set_xlim(left=0, right=global_max_freq)
+            # Ensure we don't scale to infinity on the floor
+            if self.ax.get_ylim()[0] < -120:
+                self.ax.set_ylim(bottom=-120)
             
         self.canvas.draw()
