@@ -36,14 +36,14 @@ class AnalyzerApp:
         self.btn_clear.pack(pady=5, fill=tk.X)
 
         self.remove_dc_var = tk.BooleanVar(value=True)
-        self.chk_dc = ttk.Checkbutton(control_frame, text="Remove DC (Time Dom.)", 
-                                      variable=self.remove_dc_var, command=self.refresh_plot_event)
-        self.chk_dc.pack(pady=10, anchor="w")
+        #self.chk_dc = ttk.Checkbutton(control_frame, text="Remove DC (Time Dom.)", 
+        #                              variable=self.remove_dc_var, command=self.refresh_plot_event)
+        #self.chk_dc.pack(pady=10, anchor="w")
         
         self.align_floor_var = tk.BooleanVar(value=False)
-        self.chk_floor = ttk.Checkbutton(control_frame, text="Align Floor to 0dB", 
-                                      variable=self.align_floor_var, command=self.refresh_plot_event)
-        self.chk_floor.pack(pady=2, anchor="w")
+        #self.chk_floor = ttk.Checkbutton(control_frame, text="Align Floor to 0dB", 
+        #                              variable=self.align_floor_var, command=self.refresh_plot_event)
+        #self.chk_floor.pack(pady=2, anchor="w")
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
         ttk.Label(control_frame, text="Toggle Traces:").pack(anchor="w")
         
