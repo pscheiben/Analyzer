@@ -20,7 +20,7 @@ import trace_model
 class AnalyzerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Peter's Analyzer & Comparator")
+        self.root.title(f"Peter's Analyzer & Comparator - v{config.VERSION}")
         self.traces = [] 
         self.setup_layout()
         
