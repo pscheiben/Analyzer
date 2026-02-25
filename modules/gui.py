@@ -1,7 +1,5 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from tkinter import dialog
-import trace
 import pandas as pd
 import numpy as np
 import os
@@ -35,15 +33,12 @@ class AnalyzerApp:
         self.btn_clear = ttk.Button(control_frame, text="Clear All", command=self.clear_all)
         self.btn_clear.pack(pady=5, fill=tk.X)
 
+        # New Reset View Button
+        self.btn_reset = ttk.Button(control_frame, text="Reset View", command=self.reset_view)
+        self.btn_reset.pack(pady=5, fill=tk.X)
+
         self.remove_dc_var = tk.BooleanVar(value=True)
-        #self.chk_dc = ttk.Checkbutton(control_frame, text="Remove DC (Time Dom.)", 
-        #                              variable=self.remove_dc_var, command=self.refresh_plot_event)
-        #self.chk_dc.pack(pady=10, anchor="w")
         
-        self.align_floor_var = tk.BooleanVar(value=False)
-        #self.chk_floor = ttk.Checkbutton(control_frame, text="Align Floor to 0dB", 
-        #                              variable=self.align_floor_var, command=self.refresh_plot_event)
-        #self.chk_floor.pack(pady=2, anchor="w")
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
         ttk.Label(control_frame, text="Toggle Traces:").pack(anchor="w")
         
@@ -58,7 +53,7 @@ class AnalyzerApp:
         self.peak_slider.set(5)
         self.peak_slider.pack(pady=5, fill=tk.X)
         
-        # --- Reference Selection (Add this to setup_layout in gui.py) ---
+        # --- Reference Selection ---
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
         ttk.Label(control_frame, text="Reference Trace:").pack(anchor="w")
 
@@ -80,17 +75,15 @@ class AnalyzerApp:
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        toolbar = NavigationToolbar2Tk(self.canvas, plot_frame)
-        toolbar.update()
+        self.toolbar = NavigationToolbar2Tk(self.canvas, plot_frame)
+        self.toolbar.update()
         
         self.fig.canvas.mpl_connect('pick_event', self.on_pick)
 
     def update_trace_list(self):
-        # 1. Clear the existing checkbox widgets
         for widget in self.trace_list_frame.winfo_children():
             widget.destroy()
 
-        # 2. Rebuild the checkbox list for toggling visibility
         for trace in self.traces:
             var = tk.BooleanVar(value=trace.visible)
             def toggle_cmd(t=trace, v=var):
@@ -101,13 +94,9 @@ class AnalyzerApp:
                                   variable=var, command=toggle_cmd)
             chk.pack(anchor="w", pady=2)
 
-        # 3. Update the Reference Dropdown values
-        # We create a list starting with "None", followed by all loaded trace names
         trace_names = ["None"] + [t.name for t in self.traces]
         self.ref_combo['values'] = trace_names
         
-        # 4. Safety Check: If the currently selected reference was just deleted, 
-        # reset the selection back to "None"
         if self.ref_var.get() not in trace_names:
             self.ref_var.set("None")
     
@@ -128,18 +117,22 @@ class AnalyzerApp:
             channel_name = map_data['y_col']
             trace_name = f"{filename}_{channel_name}"
             
-            # (Naming logic stays the same)
-            
             full_df = pd.read_csv(file_path, nrows=config.NUM_SAMPLES)
             
-            # WE REMOVED THE IF/ELSE CHECK FOR DOMAIN HERE:
-            new_trace = trace_model.Trace.from_time_domain(
-                name=trace_name,
-                time_data=full_df[map_data['x_col']].values,
-                volt_data=full_df[map_data['y_col']].values,
-                remove_dc=self.remove_dc_var.get(),
-                manual_sample_rate=map_data['sample_rate']
-            )
+            if map_data['is_freq_domain']:
+                new_trace = trace_model.Trace.from_freq_domain(
+                    name=trace_name,
+                    freq_data=full_df[map_data['x_col']].values,
+                    mag_data=full_df[map_data['y_col']].values
+                )
+            else:
+                new_trace = trace_model.Trace.from_time_domain(
+                    name=trace_name,
+                    time_data=full_df[map_data['x_col']].values,
+                    volt_data=full_df[map_data['y_col']].values,
+                    remove_dc=self.remove_dc_var.get(),
+                    manual_sample_rate=map_data['sample_rate']
+                )
             
             self.traces.append(new_trace)
             self.update_trace_list() 
@@ -152,6 +145,16 @@ class AnalyzerApp:
         self.traces = []
         self.update_trace_list()
         self.refresh_plot()
+
+    def reset_view(self):
+        """Resets the plot to the standard dBV view range."""
+        if not self.traces:
+            return
+        
+        max_f = max([max(t.freqs) for t in self.traces if t.visible and len(t.freqs) > 0], default=1.0)
+        self.ax.set_xlim(0, max_f)
+        self.ax.set_ylim(-120, 30)
+        self.canvas.draw()
 
     def on_slider_change(self, val):
         self.refresh_plot()
@@ -166,15 +169,14 @@ class AnalyzerApp:
         self.refresh_plot()
 
     def refresh_plot_event(self, event=None):
-        """Accepts an optional event argument to prevent Tkinter callback errors."""
         self.refresh_plot()
 
-    # --- NOW INDENTED CORRECTLY INSIDE THE CLASS ---
     def refresh_plot(self):
         current_xlim = self.ax.get_xlim()
         current_ylim = self.ax.get_ylim()
         
-        is_zoomed = (current_xlim != (0.0, 1.0)) and (current_xlim[1] > 1.0)
+        # Check if user has manually zoomed (simple heuristic)
+        is_zoomed = (current_xlim != (0.0, 1.0)) and (current_xlim[0] != 0.0 or current_xlim[1] > 1.0)
         
         self.ax.clear()
         n_peaks = int(self.peak_slider.get())
@@ -183,7 +185,6 @@ class AnalyzerApp:
         has_active = any(t.is_active for t in self.traces)
         active_trace = next((t for t in self.traces if t.is_active), None)
 
-        # --- NEW: Reference Logic ---
         ref_name = self.ref_var.get()
         ref_trace = next((t for t in self.traces if t.name == ref_name), None)
         
@@ -195,46 +196,28 @@ class AnalyzerApp:
                 global_max_freq = trace.freqs[-1]
             
             if trace.color is None:
-                try:
-                    trace.color = next(self.ax._get_lines.prop_cycler)['color']
-                except (AttributeError, StopIteration):
-                    cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
-                    trace.color = cycle[len(self.traces) % len(cycle)]
+                cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+                trace.color = cycle[len(self.traces) % len(cycle)]
 
-            # --- NEW: Perform Subtraction ---
             if ref_trace and trace != ref_trace:
-                # Ensure we don't crash if arrays somehow differ in length
-                min_len = min(len(trace.mags), len(ref_trace.mags))
-                display_mags = trace.mags[:min_len] - ref_trace.mags[:min_len]
-                display_freqs = trace.freqs[:min_len]
+                if not np.array_equal(trace.freqs, ref_trace.freqs):
+                     ref_mags_interp = np.interp(trace.freqs, ref_trace.freqs, ref_trace.mags)
+                     display_mags = trace.mags - ref_mags_interp
+                else:
+                     display_mags = trace.mags - ref_trace.mags
                 label_text = f"{trace.name} (Rel)"
             else:
                 display_mags = trace.mags
-                display_freqs = trace.freqs
                 label_text = trace.name
 
+            display_freqs = trace.freqs
             lw = 2.5 if trace.is_active else 1.0
             alpha = 1.0 if (trace.is_active or not has_active) else 0.4
 
-            # Calculate the floor for this specific trace
-            floor_val = np.median(display_mags)
-            # Plot it as a thin dashed line
-            # self.ax.axhline(floor_val, color='black', linestyle='--', linewidth=1.5, alpha=0.8, zorder=10)
-            # Plot the line
-            self.ax.axhline(floor_val, color='black', linestyle='--', linewidth=1.0, zorder=10)
+            # Updated Noise Floor labeling (dBV)
+            floor_val = analysis.get_noise_floor(display_mags)
+            self.ax.axhline(floor_val, color=trace.color, linestyle='--', linewidth=0.8, alpha=0.5)
 
-            # Add a text label on the far left (x=0) or right
-            self.ax.text(
-                0, floor_val, 
-                f" Floor: {floor_val:.1f}dB", 
-                color='black', 
-                fontsize=8, 
-                va='bottom', 
-                fontweight='bold',
-                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1) # Little white box bg
-            )
-            
-            # Use display_freqs and display_mags here
             self.ax.plot(
                 display_freqs, display_mags, 
                 label=label_text, 
@@ -254,21 +237,15 @@ class AnalyzerApp:
                 for freq, mag in top_peaks:
                     self.ax.plot(freq, mag, "x", color=trace.color, zorder=6)
                     self.ax.annotate(
-                        f"{freq/1000:.1f}k\n({mag:.1f}dB)", xy=(freq, mag), 
+                        f"{freq/1000:.1f}k\n({mag:.1f}dBV)", xy=(freq, mag), 
                         xytext=(0, 10), textcoords="offset points", 
                         ha='center', color=trace.color, 
                         fontsize=8, rotation=0, fontweight='bold', zorder=7
                     )
 
-        # --- Updated Labels ---
-        self.ax.set_title("Spectrum Comparison" if ref_name == "None" else f"Comparison (Ref: {ref_name})")
+        self.ax.set_title("Spectrum Analysis (dBV Ref 1V)" if ref_name == "None" else f"Comparison (Ref: {ref_name})")
         self.ax.set_xlabel("Frequency (Hz)")
-        
-        if ref_name != "None":
-            self.ax.set_ylabel("Relative Magnitude (dB)")
-        else:
-            self.ax.set_ylabel("Magnitude (dB, normalized)")
-            
+        self.ax.set_ylabel("Magnitude (dBV)" if ref_name == "None" else "Relative Magnitude (dB)")
         self.ax.grid(True, alpha=0.3)
         
         if any(t.visible for t in self.traces):
@@ -277,22 +254,21 @@ class AnalyzerApp:
                 legline.set_picker(True)
                 legline.set_pickradius(10)
             
+        # Apply the new requested scale logic
         if is_zoomed:
             self.ax.set_xlim(current_xlim)
             self.ax.set_ylim(current_ylim)
         elif active_trace:
             self.ax.set_xlim(left=0, right=max(active_trace.freqs))
-            # Adjust Y-axis default for Relative mode so 0dB is visible
-            bottom_val = -50 if ref_name != "None" else -100
-            self.ax.set_ylim(bottom=bottom_val, top=10 if ref_name != "None" else 5) 
+            # New Absolute dBV range
+            self.ax.set_ylim(bottom=-120, top=30) 
         else:
             self.ax.relim()
-            self.ax.autoscale_view(scalex=False, scaley=True)
+            self.ax.autoscale_view(scalex=False, scaley=False)
             if global_max_freq > 0:
                 self.ax.set_xlim(left=0, right=global_max_freq)
-            
-            # Prevent infinite floor
-            if self.ax.get_ylim()[0] < -120:
-                self.ax.set_ylim(bottom=-120)
+                                   
+            # Explicitly force your window here
+            self.ax.set_ylim(bottom=-120, top=30)
             
         self.canvas.draw()
